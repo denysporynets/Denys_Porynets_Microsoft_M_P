@@ -57,5 +57,5 @@ Se logró un **punto de equilibrio operativo**:
 
 ---
 
-**Autor:** [Tu Nombre]  
-**Contacto:** [Tu LinkedIn]
+**Autor:** Denys Porynets  
+**Contacto:** www.linkedin.com/in/denys-porynets-86b896152
