@@ -58,4 +58,4 @@ Se logró un **punto de equilibrio operativo**:
 ---
 
 **Autor:** Denys Porynets  
-**Contacto:** www.linkedin.com/in/denys-porynets-86b896152
+**Contacto:** www.linkedin.com/in/denys-porynets
