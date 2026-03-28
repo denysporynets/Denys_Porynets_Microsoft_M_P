@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Microsoft Malware Prediction — Denys Porynets</title>
+  <style>
+    :root {
+      --bg:        #080d14;
+      --bg2:       #0d1525;
+      --surface:   #111827;
+      --surface2:  #1a2438;
+      --border:    #1e2d42;
+      --border2:   #263550;
+      --green:     #22c55e;
+      --green-d:   #16a34a;
+      --green-s:   rgba(34,197,94,0.08);
+      --green-s2:  rgba(34,197,94,0.15);
+      --cyan:      #06b6d4;
+      --cyan-s:    rgba(6,182,212,0.08);
+      --red:       #f87171;
+      --red-s:     rgba(248,113,113,0.1);
+      --amber:     #fbbf24;
+      --amber-s:   rgba(251,191,36,0.1);
+      --text:      #f1f5f9;
+      --text-2:    #94a3b8;
+      --text-3:    #475569;
+      --mono:      "JetBrains Mono", "Fira Code", "Courier New", monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── SCANLINE OVERLAY ── */
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(8,13,20,0.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      height: 58px;
+      display: flex; align-items: center;
+      padding: 0 32px;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 0.9rem; color: var(--text);
+      letter-spacing: 0.04em;
+    }
+    .nav-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green); }
+      50%       { opacity: 0.6; box-shadow: 0 0 4px var(--green); }
+    }
+    .nav-links { display: flex; gap: 28px; list-style: none; align-items: center; }
+    .nav-links a { color: var(--text-2); font-size: 0.85rem; font-weight: 500; transition: color 0.15s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .nav-links .back { color: var(--green); font-weight: 600; }
+    .nav-links .back:hover { color: #4ade80; }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      padding: 100px 24px 88px;
+      text-align: center;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 50% 0%, rgba(34,197,94,0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 80% 100%, rgba(6,182,212,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hero-label {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 0.75rem; font-weight: 500;
+      color: var(--green); letter-spacing: 0.1em;
+      background: var(--green-s); border: 1px solid rgba(34,197,94,0.2);
+      border-radius: 4px; padding: 5px 14px; margin-bottom: 28px;
+    }
+    .hero h1 {
+      font-size: 3.2rem; font-weight: 800;
+      letter-spacing: -0.03em; line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    .hero h1 em { font-style: normal; color: var(--green); }
+    .hero-sub {
+      font-size: 1.1rem; color: var(--text-2); max-width: 600px;
+      margin: 0 auto 52px; line-height: 1.7;
+    }
+
+    /* ── STAT STRIP ── */
+    .stat-strip {
+      display: flex; justify-content: center; gap: 0;
+      flex-wrap: wrap; margin-bottom: 44px;
+    }
+    .stat-item {
+      padding: 24px 40px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      text-align: center;
+    }
+    .stat-item:first-child { border-radius: 10px 0 0 10px; }
+    .stat-item:last-child  { border-radius: 0 10px 10px 0; }
+    .stat-item + .stat-item { margin-left: -1px; }
+    .stat-val {
+      font-family: var(--mono); font-size: 2rem; font-weight: 700;
+      color: var(--green); display: block; line-height: 1;
+      margin-bottom: 6px;
+    }
+    .stat-val.cyan { color: var(--cyan); }
+    .stat-val.amber { color: var(--amber); }
+    .stat-lbl { font-size: 0.75rem; color: var(--text-2); letter-spacing: 0.05em; }
+
+    .hero-actions {
+      display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 24px; border-radius: 6px;
+      font-size: 0.88rem; font-weight: 600;
+      transition: all 0.15s; cursor: pointer; letter-spacing: 0.02em;
+    }
+    .btn:hover { text-decoration: none; transform: translateY(-1px); }
+    .btn-primary {
+      background: var(--green); color: #0a0f1e;
+      box-shadow: 0 0 20px rgba(34,197,94,0.3);
+    }
+    .btn-primary:hover { background: #4ade80; box-shadow: 0 0 30px rgba(34,197,94,0.5); }
+    .btn-ghost {
+      border: 1px solid var(--border2); color: var(--text-2);
+      background: var(--surface);
+    }
+    .btn-ghost:hover { border-color: var(--green); color: var(--green); }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── SECTIONS ── */
+    section { padding: 80px 0; border-top: 1px solid var(--border); position: relative; }
+    .sec-label {
+      font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--green); margin-bottom: 8px;
+    }
+    .sec-title {
+      font-size: 1.8rem; font-weight: 800; margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+    .sec-desc { color: var(--text-2); max-width: 600px; margin-bottom: 48px; font-size: 0.95rem; }
+
+    /* ── CHALLENGE CARDS ── */
+    .challenge-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+    .ch-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 28px 24px;
+      transition: border-color 0.2s;
+    }
+    .ch-card:hover { border-color: var(--green); }
+    .ch-icon { font-size: 1.8rem; margin-bottom: 14px; }
+    .ch-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; }
+    .ch-card p { font-size: 0.84rem; color: var(--text-2); line-height: 1.65; }
+    .ch-card .highlight {
+      font-family: var(--mono); font-size: 0.8rem;
+      color: var(--green); background: var(--green-s);
+      border-radius: 4px; padding: 2px 8px; margin-top: 12px;
+      display: inline-block;
+    }
+
+    /* ── PIPELINE ── */
+    .pipeline { display: flex; flex-direction: column; gap: 0; }
+    .pipe-step {
+      display: flex; align-items: flex-start; gap: 24px;
+      padding: 28px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pipe-step:last-child { border-bottom: none; }
+    .pipe-num {
+      flex-shrink: 0; width: 44px; height: 44px;
+      background: var(--green-s); border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 0.9rem; font-weight: 700;
+      color: var(--green);
+    }
+    .pipe-content { flex: 1; }
+    .pipe-content h3 {
+      font-size: 1rem; font-weight: 700; margin-bottom: 6px;
+    }
+    .pipe-content p { font-size: 0.88rem; color: var(--text-2); line-height: 1.65; }
+    .pipe-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .ptag {
+      font-family: var(--mono); font-size: 0.72rem;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--cyan); border-radius: 4px; padding: 2px 8px;
+    }
+
+    /* ── METRICS ── */
+    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+    /* Confusion matrix */
+    .cm-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 32px;
+    }
+    .cm-title {
+      font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-2); margin-bottom: 20px;
+      text-align: center;
+    }
+    .cm-labels-top {
+      display: grid; grid-template-columns: 80px 1fr 1fr;
+      gap: 4px; margin-bottom: 4px;
+    }
+    .cm-labels-top span {
+      text-align: center; font-size: 0.72rem; color: var(--text-3);
+      letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 0;
+    }
+    .cm-row { display: grid; grid-template-columns: 80px 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+    .cm-row-label {
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 12px; font-size: 0.72rem; color: var(--text-3);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .cm-cell {
+      border-radius: 8px; padding: 20px 12px;
+      text-align: center; transition: transform 0.2s;
+    }
+    .cm-cell:hover { transform: scale(1.02); }
+    .cm-cell.tp { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); }
+    .cm-cell.tn { background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.2); }
+    .cm-cell.fp { background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.2); }
+    .cm-cell.fn { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.15); }
+    .cm-val {
+      font-family: var(--mono); font-size: 1.3rem; font-weight: 700;
+      display: block; line-height: 1;
+    }
+    .cm-cell.tp .cm-val, .cm-cell.tn .cm-val { color: var(--green); }
+    .cm-cell.fp .cm-val, .cm-cell.fn .cm-val { color: var(--red); }
+    .cm-tag { font-size: 0.68rem; color: var(--text-3); margin-top: 6px; letter-spacing: 0.04em; }
+
+    /* ROC / AUC panel */
+    .auc-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 32px;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .auc-header { text-align: center; }
+    .auc-number {
+      font-family: var(--mono); font-size: 4rem; font-weight: 800;
+      color: var(--green); line-height: 1;
+      text-shadow: 0 0 40px rgba(34,197,94,0.4);
+    }
+    .auc-label { font-size: 0.8rem; color: var(--text-2); margin-top: 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .auc-compare { display: flex; flex-direction: column; gap: 12px; }
+    .auc-bar-row { display: flex; flex-direction: column; gap: 6px; }
+    .auc-bar-info { display: flex; justify-content: space-between; font-size: 0.8rem; }
+    .auc-bar-info span:first-child { color: var(--text-2); }
+    .auc-bar-track {
+      height: 10px; background: var(--surface2);
+      border-radius: 6px; overflow: hidden;
+    }
+    .auc-bar-fill {
+      height: 100%; border-radius: 6px;
+      transition: width 1.2s cubic-bezier(0.4,0,0.2,1);
+    }
+    .auc-bar-fill.our   { background: linear-gradient(90deg, var(--green), #4ade80); }
+    .auc-bar-fill.base  { background: var(--border2); }
+    .auc-bar-fill.rand  { background: var(--text-3); }
+
+    /* derived metrics row */
+    .derived-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-top: 8px; }
+    .derived-card {
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 8px; padding: 16px 12px; text-align: center;
+    }
+    .derived-val {
+      font-family: var(--mono); font-size: 1.25rem; font-weight: 700;
+      color: var(--cyan); display: block;
+    }
+    .derived-lbl { font-size: 0.7rem; color: var(--text-3); margin-top: 4px; }
+
+    /* ── FEATURES ── */
+    .features-list { display: flex; flex-direction: column; gap: 10px; }
+    .feat-row { display: flex; align-items: center; gap: 16px; }
+    .feat-rank {
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--text-3); width: 24px; text-align: right; flex-shrink: 0;
+    }
+    .feat-name {
+      font-family: var(--mono); font-size: 0.82rem; color: var(--text);
+      width: 240px; flex-shrink: 0;
+    }
+    .feat-bar-track {
+      flex: 1; height: 8px; background: var(--surface2);
+      border-radius: 4px; overflow: hidden;
+    }
+    .feat-bar-fill {
+      height: 100%; border-radius: 4px;
+      background: linear-gradient(90deg, var(--green-d), var(--green));
+    }
+    .feat-cat {
+      font-size: 0.68rem; width: 100px; text-align: right;
+      flex-shrink: 0; padding: 2px 8px; border-radius: 4px;
+      font-weight: 600;
+    }
+    .feat-cat.sec  { color: var(--green);  background: var(--green-s); }
+    .feat-cat.geo  { color: var(--cyan);   background: var(--cyan-s); }
+    .feat-cat.os   { color: var(--amber);  background: var(--amber-s); }
+    .feat-cat.hw   { color: #c084fc; background: rgba(192,132,252,0.1); }
+    .feat-cat.net  { color: #60a5fa; background: rgba(96,165,250,0.1); }
+
+    /* ── INSIGHTS ── */
+    .insights-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+    .insight-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 28px 24px;
+      border-left: 3px solid var(--green);
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .insight-card:hover { transform: translateY(-2px); border-left-color: #4ade80; }
+    .insight-card.cyan { border-left-color: var(--cyan); }
+    .insight-card.amber { border-left-color: var(--amber); }
+    .insight-card.red { border-left-color: var(--red); }
+    .insight-icon { font-size: 1.4rem; margin-bottom: 12px; }
+    .insight-card h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; }
+    .insight-card p { font-size: 0.85rem; color: var(--text-2); line-height: 1.65; }
+
+    /* ── STACK ── */
+    .stack-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+    .stack-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px 16px; text-align: center;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .stack-card:hover { border-color: var(--green); transform: translateY(-2px); }
+    .stack-icon { font-size: 1.6rem; margin-bottom: 10px; }
+    .stack-name { font-size: 0.82rem; font-weight: 700; margin-bottom: 4px; }
+    .stack-role { font-size: 0.72rem; color: var(--text-3); }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 44px 24px;
+      text-align: center;
+      font-size: 0.85rem; color: var(--text-3);
+    }
+    footer a { color: var(--text-2); }
+    footer a:hover { color: var(--green); text-decoration: none; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 720px) {
+      .hero h1 { font-size: 2.1rem; }
+      .stat-strip { flex-direction: column; align-items: center; }
+      .stat-item { border-radius: 8px !important; margin: 4px 0 !important; width: 80%; }
+      .challenge-grid { grid-template-columns: 1fr; }
+      .metrics-grid { grid-template-columns: 1fr; }
+      .insights-grid { grid-template-columns: 1fr; }
+      .stack-grid { grid-template-columns: repeat(2,1fr); }
+      .derived-row { grid-template-columns: repeat(2,1fr); }
+      .feat-name { width: 160px; }
+      nav { padding: 0 16px; }
+      .nav-links { gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">
+    <div class="nav-dot"></div>
+    MALWARE PREDICTOR
+  </div>
+  <ul class="nav-links">
+    <li><a href="#reto">Reto</a></li>
+    <li><a href="#pipeline">Pipeline</a></li>
+    <li><a href="#resultados">Resultados</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="https://github.com/denysporynets/Denys_Porynets_Microsoft_M_P" target="_blank">GitHub →</a></li>
+    <li><a href="https://denysporynets.github.io" class="back">← Portfolio</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="container">
+    <div class="hero-label">Microsoft Malware Prediction · Kaggle · LightGBM</div>
+    <h1>Detección de malware<br>a <em>escala real</em></h1>
+    <p class="hero-sub">
+      Modelo de Machine Learning entrenado sobre 9 millones de registros para predecir si una máquina Windows será infectada, procesado íntegramente en un MacBook de 8GB de RAM.
+    </p>
+
+    <div class="stat-strip">
+      <div class="stat-item">
+        <span class="stat-val">0.7356</span>
+        <span class="stat-lbl">AUC — Validación</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val cyan">9M</span>
+        <span class="stat-lbl">Registros de entrenamiento</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val amber">85%</span>
+        <span class="stat-lbl">Reducción de memoria</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val">+5%</span>
+        <span class="stat-lbl">Sobre benchmark Kaggle</span>
+      </div>
+    </div>
+
+    <div class="hero-actions">
+      <a href="https://github.com/denysporynets/Denys_Porynets_Microsoft_M_P" target="_blank" class="btn btn-primary">Ver en GitHub</a>
+      <a href="#resultados" class="btn btn-ghost">Ver resultados</a>
+    </div>
+  </div>
+</div>
+
+<!-- RETO TÉCNICO -->
+<section id="reto">
+  <div class="container">
+    <div class="sec-label">// reto técnico</div>
+    <div class="sec-title">9 millones de filas, 8GB de RAM</div>
+    <p class="sec-desc">El dataset original ocupa 14GB sin comprimir. El reto no era solo construir un buen modelo — era conseguir que funcionase en hardware estándar sin perder un solo registro.</p>
+
+    <div class="challenge-grid">
+      <div class="ch-card">
+        <div class="ch-icon">🧮</div>
+        <h3>Optimización de tipos</h3>
+        <p>Definición explícita de <code>dtype</code> antes de la carga: <code>int8</code> para booleanos, <code>category</code> para texto, <code>float32</code> para numérico. El autoinferer de Pandas habría asignado <code>int64</code> y <code>object</code> por defecto.</p>
+        <span class="highlight">14 GB → 2.1 GB en RAM</span>
+      </div>
+      <div class="ch-card">
+        <div class="ch-icon">📌</div>
+        <h3>Carga selectiva de columnas</h3>
+        <p>Análisis previo de sparsity por columna. Las features con más del 50% de valores nulos se excluyeron en el parámetro <code>usecols</code> al cargar el CSV, antes de que llegasen a memoria.</p>
+        <span class="highlight">83 columnas → 69 útiles</span>
+      </div>
+      <div class="ch-card">
+        <div class="ch-icon">💾</div>
+        <h3>Checkpoints en Parquet</h3>
+        <p>Cada fase del pipeline serializa el resultado en formato Parquet con compresión snappy. Si el kernel crashea durante el proceso, se retoma desde el último checkpoint sin perder tiempo.</p>
+        <span class="highlight">I/O 10x más rápido que CSV</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIPELINE -->
+<section id="pipeline">
+  <div class="container">
+    <div class="sec-label">// metodología</div>
+    <div class="sec-title">Pipeline en 6 fases</div>
+    <p class="sec-desc">Enfoque data-centric: el 80% del esfuerzo fue en limpieza e ingeniería de datos. Un modelo limpio sobre datos limpios supera a un modelo complejo sobre datos sucios.</p>
+
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-num">01</div>
+        <div class="pipe-content">
+          <h3>Ingesta y optimización de memoria</h3>
+          <p>Especificación de dtypes y columnas antes de leer el CSV. Reducción del footprint de 14GB a 2.1GB (85%). Primeros checkpoints en Parquet para recuperación rápida.</p>
+          <div class="pipe-tags">
+            <span class="ptag">pandas</span>
+            <span class="ptag">pyarrow</span>
+            <span class="ptag">dtype engineering</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step">
+        <div class="pipe-num">02</div>
+        <div class="pipe-content">
+          <h3>Limpieza y auditoría de datos</h3>
+          <p>Eliminación de columnas con más del 50% de nulos. Imputación no invasiva: <code>-1</code> para numérico y <code>'Unknown'</code> para categórico, preservando la señal de ausencia sin introducir artefactos estadísticos. Análisis de varianza para detectar columnas cuasi-constantes (&gt;99% un solo valor).</p>
+          <div class="pipe-tags">
+            <span class="ptag">null analysis</span>
+            <span class="ptag">variance filter</span>
+            <span class="ptag">non-invasive imputation</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step">
+        <div class="pipe-num">03</div>
+        <div class="pipe-content">
+          <h3>Ingeniería de features</h3>
+          <p>Descomposición vectorizada de strings de versión (<code>EngineVersion</code>, <code>AppVersion</code>, <code>AvSigVersion</code>) en componentes jerárquicos numéricos: de 7.000+ valores únicos a 30 por feature. Top-K encoding en variables de alta cardinalidad: top 20 valores + categoría "Other".</p>
+          <div class="pipe-tags">
+            <span class="ptag">str.split vectorizado</span>
+            <span class="ptag">frequency encoding</span>
+            <span class="ptag">cardinality reduction</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step">
+        <div class="pipe-num">04</div>
+        <div class="pipe-content">
+          <h3>Train-Test Split estratificado</h3>
+          <p>División 80/20 estratificada por la variable objetivo para mantener la distribución real de clases (50.14% limpio / 49.86% infectado) en ambos conjuntos. Train: ~7.1M registros. Validación: ~1.8M registros.</p>
+          <div class="pipe-tags">
+            <span class="ptag">scikit-learn</span>
+            <span class="ptag">stratified split</span>
+            <span class="ptag">class balance</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step">
+        <div class="pipe-num">05</div>
+        <div class="pipe-content">
+          <h3>Entrenamiento LightGBM</h3>
+          <p>LightGBM elegido por su optimización basada en histogramas, eficiencia nativa con grandes datasets y soporte de variables categóricas sin one-hot encoding. Prototipado en 10% del dataset antes de escalar al 100%. Entrenamiento completo: 2000 rondas en ~20 minutos sobre Apple M2.</p>
+          <div class="pipe-tags">
+            <span class="ptag">LightGBM</span>
+            <span class="ptag">GBDT</span>
+            <span class="ptag">early stopping</span>
+            <span class="ptag">lr=0.05 · leaves=60</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step">
+        <div class="pipe-num">06</div>
+        <div class="pipe-content">
+          <h3>Evaluación y validación</h3>
+          <p>Evaluación sobre el set de validación (1.8M registros): AUC-ROC como métrica principal, matriz de confusión, análisis de feature importance por ganancia. Gap train-val de 0.0083 AUC confirma generalización sólida sin overfitting.</p>
+          <div class="pipe-tags">
+            <span class="ptag">AUC-ROC</span>
+            <span class="ptag">confusion matrix</span>
+            <span class="ptag">feature importance</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RESULTADOS -->
+<section id="resultados">
+  <div class="container">
+    <div class="sec-label">// resultados</div>
+    <div class="sec-title">Métricas del modelo final</div>
+    <p class="sec-desc">Evaluado sobre ~1.8 millones de registros de validación no vistos durante el entrenamiento.</p>
+
+    <div class="metrics-grid">
+
+      <!-- AUC -->
+      <div class="auc-wrap">
+        <div class="auc-header">
+          <div class="auc-number">0.7356</div>
+          <div class="auc-label">AUC — Área bajo la curva ROC</div>
+        </div>
+        <div class="auc-compare">
+          <div class="auc-bar-row">
+            <div class="auc-bar-info">
+              <span>Este modelo</span>
+              <span style="color:var(--green); font-family:var(--mono); font-weight:700;">0.7356</span>
+            </div>
+            <div class="auc-bar-track">
+              <div class="auc-bar-fill our" style="width: 73.56%"></div>
+            </div>
+          </div>
+          <div class="auc-bar-row">
+            <div class="auc-bar-info">
+              <span>Benchmark Kaggle</span>
+              <span style="color:var(--text-2); font-family:var(--mono);">~0.70</span>
+            </div>
+            <div class="auc-bar-track">
+              <div class="auc-bar-fill base" style="width: 70%"></div>
+            </div>
+          </div>
+          <div class="auc-bar-row">
+            <div class="auc-bar-info">
+              <span>Clasificador aleatorio</span>
+              <span style="color:var(--text-3); font-family:var(--mono);">0.50</span>
+            </div>
+            <div class="auc-bar-track">
+              <div class="auc-bar-fill rand" style="width: 50%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="derived-row">
+          <div class="derived-card">
+            <span class="derived-val">~66%</span>
+            <div class="derived-lbl">Sensibilidad (TPR)</div>
+          </div>
+          <div class="derived-card">
+            <span class="derived-val">~67%</span>
+            <div class="derived-lbl">Especificidad (TNR)</div>
+          </div>
+          <div class="derived-card">
+            <span class="derived-val">0.74</span>
+            <div class="derived-lbl">AUC entrenamiento</div>
+          </div>
+          <div class="derived-card">
+            <span class="derived-val">0.008</span>
+            <div class="derived-lbl">Gap train-val</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFUSION MATRIX -->
+      <div class="cm-wrap">
+        <div class="cm-title">Matriz de confusión — Set de validación (~1.8M)</div>
+        <div class="cm-labels-top">
+          <span></span>
+          <span>Pred. limpio</span>
+          <span>Pred. infectado</span>
+        </div>
+        <div class="cm-row">
+          <div class="cm-row-label">Real limpio</div>
+          <div class="cm-cell tn">
+            <span class="cm-val">602K</span>
+            <div class="cm-tag">True Negative</div>
+          </div>
+          <div class="cm-cell fp">
+            <span class="cm-val">290K</span>
+            <div class="cm-tag">False Positive</div>
+          </div>
+        </div>
+        <div class="cm-row">
+          <div class="cm-row-label">Real infect.</div>
+          <div class="cm-cell fn">
+            <span class="cm-val">302K</span>
+            <div class="cm-tag">False Negative</div>
+          </div>
+          <div class="cm-cell tp">
+            <span class="cm-val">589K</span>
+            <div class="cm-tag">True Positive</div>
+          </div>
+        </div>
+        <div style="margin-top:20px; padding-top:20px; border-top:1px solid var(--border);">
+          <p style="font-size:0.82rem; color:var(--text-2); line-height:1.6;">
+            <strong style="color:var(--text);">Equilibrio de errores:</strong> el modelo genera un número similar de falsos positivos (~290K) y falsos negativos (~302K), lo que indica una toma de decisiones balanceada: no sacrifica detección por reducir falsas alarmas, ni al revés.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="sec-label">// feature importance</div>
+    <div class="sec-title">Top 15 variables predictoras</div>
+    <p class="sec-desc">Ordenadas por ganancia de información. Las versiones del antivirus y del sistema operativo dominan, confirmando que mantener el software actualizado es el factor de riesgo más determinante.</p>
+
+    <div class="features-list">
+      <div class="feat-row">
+        <span class="feat-rank">1</span>
+        <span class="feat-name">AvSigVersion</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:100%"></div></div>
+        <span class="feat-cat sec">Seguridad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">2</span>
+        <span class="feat-name">AppVersion</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:91%"></div></div>
+        <span class="feat-cat sec">Seguridad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">3</span>
+        <span class="feat-name">EngineVersion</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:84%"></div></div>
+        <span class="feat-cat sec">Seguridad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">4</span>
+        <span class="feat-name">CountryIdentifier</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:72%"></div></div>
+        <span class="feat-cat geo">Geográfico</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">5</span>
+        <span class="feat-name">CityIdentifier</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:65%"></div></div>
+        <span class="feat-cat geo">Geográfico</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">6</span>
+        <span class="feat-name">SmartScreen</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:58%"></div></div>
+        <span class="feat-cat sec">Seguridad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">7</span>
+        <span class="feat-name">Census_ProcessorMfrId</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:50%"></div></div>
+        <span class="feat-cat hw">Hardware</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">8</span>
+        <span class="feat-name">OSBuildLab</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:45%"></div></div>
+        <span class="feat-cat os">Sistema Op.</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">9</span>
+        <span class="feat-name">OSVersion</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:40%"></div></div>
+        <span class="feat-cat os">Sistema Op.</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">10</span>
+        <span class="feat-name">IsSxsPassiveMode</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:35%"></div></div>
+        <span class="feat-cat net">Conectividad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">11</span>
+        <span class="feat-name">Census_OSInstallType</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:30%"></div></div>
+        <span class="feat-cat os">Sistema Op.</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">12</span>
+        <span class="feat-name">Wdft_IsGamer</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:26%"></div></div>
+        <span class="feat-cat hw">Hardware</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">13</span>
+        <span class="feat-name">Census_GenuineStateName</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:22%"></div></div>
+        <span class="feat-cat sec">Seguridad</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">14</span>
+        <span class="feat-name">Census_ProcessorCoreCount</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:18%"></div></div>
+        <span class="feat-cat hw">Hardware</span>
+      </div>
+      <div class="feat-row">
+        <span class="feat-rank">15</span>
+        <span class="feat-name">GeoNameIdentifier</span>
+        <div class="feat-bar-track"><div class="feat-bar-fill" style="width:14%"></div></div>
+        <span class="feat-cat geo">Geográfico</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSIGHTS -->
+<section id="insights">
+  <div class="container">
+    <div class="sec-label">// conclusiones</div>
+    <div class="sec-title">Lo que aprendió el modelo</div>
+    <p class="sec-desc">Los patrones más relevantes extraídos del análisis de importancia y de los resultados de validación.</p>
+
+    <div class="insights-grid">
+      <div class="insight-card">
+        <div class="insight-icon">🔄</div>
+        <h3>El software desactualizado es el mayor factor de riesgo</h3>
+        <p>Las tres primeras posiciones del feature importance son versiones de antivirus y motor. Máquinas con firmas de antivirus antiguas tienen una probabilidad significativamente mayor de infección. Actualizar el software es más efectivo que cualquier configuración de seguridad manual.</p>
+      </div>
+      <div class="insight-card cyan">
+        <div class="insight-icon">🌍</div>
+        <h3>Patrones geográficos claros</h3>
+        <p>País y ciudad están entre las top 5 features. Esto refleja variaciones regionales en campañas de malware, diferencias en software pirateado y distintos niveles de concienciación sobre ciberseguridad. La geografía es un proxy de comportamiento del usuario.</p>
+      </div>
+      <div class="insight-card amber">
+        <div class="insight-icon">🛡️</div>
+        <h3>SmartScreen importa más de lo esperado</h3>
+        <p>El estado de Windows SmartScreen ocupa la posición 6. Los usuarios que desactivan las protecciones integradas de Windows muestran un riesgo de infección drásticamente mayor. La configuración manual de seguridad tiene tanto peso como las actualizaciones del sistema.</p>
+      </div>
+      <div class="insight-card red">
+        <div class="insight-icon">⚖️</div>
+        <h3>Modelo equilibrado, no conservador</h3>
+        <p>El balance casi perfecto entre falsos positivos (~290K) y falsos negativos (~302K) demuestra que el modelo toma decisiones sin sesgarse hacia ninguna clase. No genera fatiga de alertas por exceso de falsos positivos, ni deja pasar amenazas por un umbral demasiado permisivo.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STACK -->
+<section id="stack">
+  <div class="container">
+    <div class="sec-label">// stack técnico</div>
+    <div class="sec-title">Tecnologías utilizadas</div>
+
+    <div class="stack-grid">
+      <div class="stack-card">
+        <div class="stack-icon">⚡</div>
+        <div class="stack-name">LightGBM</div>
+        <div class="stack-role">Modelo principal</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">🐼</div>
+        <div class="stack-name">pandas</div>
+        <div class="stack-role">Procesamiento de datos</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">🔢</div>
+        <div class="stack-name">NumPy</div>
+        <div class="stack-role">Computación numérica</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">🎯</div>
+        <div class="stack-name">scikit-learn</div>
+        <div class="stack-role">Métricas y split</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">📊</div>
+        <div class="stack-name">Plotly</div>
+        <div class="stack-role">Visualizaciones interactivas</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">🎨</div>
+        <div class="stack-name">matplotlib / seaborn</div>
+        <div class="stack-role">Visualizaciones estáticas</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">🗜️</div>
+        <div class="stack-name">pyarrow</div>
+        <div class="stack-role">Checkpoints Parquet</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-icon">💻</div>
+        <div class="stack-name">Apple M2 · 8GB</div>
+        <div class="stack-role">Hardware de entrenamiento</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>
+    <a href="https://github.com/denysporynets/Denys_Porynets_Microsoft_M_P" target="_blank">github.com/denysporynets/Denys_Porynets_Microsoft_M_P</a>
+    &nbsp;·&nbsp;
+    <a href="https://denysporynets.github.io">← Volver al portfolio</a>
+    &nbsp;·&nbsp;
+    Denys Porynets · 2026
+  </p>
+</footer>
+
+</body>
+</html>
