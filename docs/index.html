@@ -126,7 +126,10 @@
   :focus-visible { outline:2px solid var(--signal); outline-offset:3px; border-radius:2px; }
 
   /* ─── fondo: rejilla de firmas hexadecimales ─── */
-  .bg { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  /* El papel se repite aquí a propósito: .bg es fixed con z-index, o sea un contexto de
+     apilado propio, y sin fondo el mix-blend-mode del grano se mezclaba contra un grupo
+     transparente en vez de contra el papel — pintaba ruido plano en lugar de multiplicar. */
+  .bg { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; background:var(--paper); }
   .bg-grain {
     position:absolute; inset:0; opacity:0.16; mix-blend-mode:multiply;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -140,7 +143,7 @@
   :root[data-theme="dark"] .bg-grain { mix-blend-mode:screen; opacity:0.05; }
   :root[data-theme="dark"] .bg-firmas { opacity:0.10; }
 
-  main, header.nav { position:relative; z-index:1; }
+  main, header.nav, footer { position:relative; z-index:1; }   /* el pie vive fuera de <main> (landmark contentinfo) */
   .wrap { max-width:1000px; margin:0 auto; padding-inline:var(--pad); }
   .tag { font-family:var(--font-mono); font-size:0.72rem; letter-spacing:0.09em; text-transform:uppercase; color:var(--sage); }
   .num { font-variant-numeric:tabular-nums; }
@@ -328,8 +331,12 @@
   .celda .k { display:block; font-family:var(--font-mono); font-size:0.62rem; letter-spacing:0.05em; color:var(--sage); margin-top:5px; }
   .celda.acierto .v { color:var(--limpio); }
   .celda.error .v { color:var(--riesgo); }
-  /* las dos formas de participar en la fórmula: numerador (lleno) y sólo denominador (borde) */
-  .celda.dim { opacity:0.45; }
+  /* las dos formas de participar en la fórmula: numerador (lleno) y sólo denominador (borde).
+     La celda que NO entra se apaga perdiendo el COLOR, no la opacidad: bajarla al 45 % dejaba
+     unos números perfectamente reales por debajo de 2:1 de contraste. En tinta neutra siguen
+     legibles (11:1) y aun así se leen como apagados junto a los acentos de al lado. */
+  .celda.dim { opacity:0.88; }
+  .celda.dim .v { color:var(--ink); }
   .celda.den { border-color:var(--brass); }
   .celda.num-on {
     border-color:var(--brass);
@@ -408,6 +415,9 @@
   <style>
     .reveal { opacity:1 !important; transform:none !important; filter:none !important; }
     .bg-firmas { display:none; }
+    /* sin JS las lentes no conmutan nada: se retiran y queda la lectura de sensibilidad,
+       que ya está completa en el marcado */
+    .lentes { display:none; }
   </style>
 </noscript>
 </head>
@@ -449,7 +459,7 @@
 
     <div class="telemetry reveal">
       <div class="tcell"><b class="num">0,7356</b><span>AUC · validación</span></div>
-      <div class="tcell"><b class="num">8.921.483</b><span>registros entrenados</span></div>
+      <div class="tcell"><b class="num">8.921.483</b><span>registros procesados</span></div>
       <div class="tcell"><b class="num">2,1 GB</b><span>en RAM · desde 14 GB</span></div>
       <div class="tcell"><b class="num">19,5 min</b><span>entrenamiento · M2</span></div>
     </div>
@@ -584,10 +594,14 @@
     <span class="tag reveal">Los resultados</span>
     <h2 class="reveal">Un AUC no dice a quién le <em>falla</em></h2>
     <p class="reveal">
-      <strong>AUC 0,7356</strong> sobre el conjunto de validación, frente al rango de 0,67–0,71 en el que se movía
-      la competición original de Kaggle. Pero el AUC resume la curva entera: para saber qué hace el modelo en
-      un despliegue real hay que bajar a los cuatro números que salen de fijar un umbral. Estos son los suyos,
-      sobre <span class="num">1.784.297</span> equipos.
+      <strong>AUC 0,7356</strong> sobre el conjunto de validación. La competición original de Kaggle se movía
+      en 0,67–0,71, pero <strong>los dos números no son comparables</strong>: allí se puntuaba contra un conjunto
+      de prueba desplazado en el tiempo —máquinas de meses posteriores, con otras versiones y otras campañas de
+      malware— y aquí la validación es un corte aleatorio del mismo fichero. El segundo examen es más fácil, y
+      decir lo contrario sería regalarse una victoria. Lo que el AUC sí sostiene es que el modelo separa las dos
+      clases muy por encima del azar. Y como resume la curva entera, para saber qué hace en un despliegue real
+      hay que bajar a los cuatro números que salen de fijar un umbral: estos son los suyos, sobre
+      <span class="num">1.784.297</span> equipos.
     </p>
 
     <div class="bascula reveal" id="bascula">
@@ -685,7 +699,8 @@
     <h3 class="reveal">Lo que se sostiene en las dos lecturas</h3>
     <p class="reveal">
       <strong>El estado del antivirus y sus firmas.</strong> <code>AVProductStatesIdentifier</code> y
-      <code>AvSigVersion</code> están arriba se mire como se mire. Traducido: no protege tanto tener antivirus
+      <code>AvSigVersion_2</code> —la versión de firmas ya descompuesta en la fase 04— están arriba se mire
+      como se mire. Traducido: no protege tanto tener antivirus
       como tenerlo <em>al día y encendido</em>. Y el peso de <code>SmartScreen</code> apunta al mismo sitio —
       quien apaga la protección que ya trae el sistema aparece en el lado infectado con más frecuencia.
     </p>
@@ -756,17 +771,18 @@
     <p>La restricción no fue el obstáculo del proyecto. Fue <em>lo que lo obligó a estar bien diseñado</em>.</p>
   </section>
 
-  <footer class="wrap">
-    <div class="foot-row">
-      <span class="tag">
-        Microsoft Malware Prediction · Kaggle 2019 ·
-        <a href="https://github.com/denysporynets/Denys_Porynets_Microsoft_M_P" target="_blank" rel="noopener">repositorio</a> ·
-        <a href="https://denysporynets.github.io">volver al portfolio</a>
-      </span>
-      <span class="tag">Denys Porynets · 2026</span>
-    </div>
-  </footer>
 </main>
+
+<footer class="wrap">
+  <div class="foot-row">
+    <span class="tag">
+      Microsoft Malware Prediction · Kaggle 2019 ·
+      <a href="https://github.com/denysporynets/Denys_Porynets_Microsoft_M_P" target="_blank" rel="noopener">repositorio</a> ·
+      <a href="https://denysporynets.github.io">volver al portfolio</a>
+    </span>
+    <span class="tag">Denys Porynets · 2026</span>
+  </div>
+</footer>
 
 <script>
   const $ = id => document.getElementById(id);
